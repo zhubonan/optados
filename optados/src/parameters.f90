@@ -121,6 +121,11 @@ module od_parameters
 
   real(kind=dp),     public, save :: lenconfac
 
+  ! Flags for Saving HDF5 
+  logical,           public, save :: save_hdf5
+  ! If progress should be printed to STDOUT
+  logical,           public, save :: print_progress
+
 
   private
 
@@ -399,6 +404,15 @@ contains
     LAI_lorentzian_offset    = 0.0_dp
     call param_get_keyword('lai_lorentzian_offset',found,r_value=LAI_lorentzian_offset)
     if (LAI_lorentzian_offset.lt.0.0_dp) call io_error('Error: LAI_lorentzian_offset must be positive')
+
+    ! Check if the flag present the save data in the HDF5 file format
+    ! At the moment this is only implemented for the optical matrix
+    save_hdf5 = .false.
+    call param_get_keyword('save_hdf5',found,l_value=save_hdf5)
+
+    print_progress = .false.
+    call param_get_keyword('print_progress',found,l_value=print_progress)
+
 
     num_atoms=0
     num_species=0

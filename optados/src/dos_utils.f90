@@ -80,6 +80,7 @@ module od_dos_utils
   ! P R I V A T E   V A R I A B L E S 
   private ! unless otherwise indicated
 
+  integer :: report_interval = 10
   type(matrix_weights_array_boundaries) :: mw
 
   real(kind=dp), save                   :: delta_bins ! Width of bins
@@ -1235,12 +1236,15 @@ end if
        write(stdout,'(1x,a78)') '+------------------------------ Calculate DOS -------------------------------+'
     endif
     do ik=1,num_kpoints_on_node(my_node_id)
+       call report_progress("Kpoints -> ", ik, num_kpoints_on_node(my_node_id), report_interval, 2)
        if(iprint>1.and.on_root) then
           if (mod(real(ik,dp),10.0_dp) == 0.0_dp) write(stdout,'(1x,a1,a28,i4,a3,i4,a14,7x,a17)') "|",&
                &"Calculating k-point ", ik, " of", num_kpoints_on_node(my_node_id)," on this node","<-- DOS |"
        Endif
        do is=1,nspins
+          call report_progress("Spins -> ", is, nspins, report_interval, 1)
           do ib=1,nbands
+             call report_progress("Bands -> ", ib, nbands, report_interval, 0)
              if(linear.or.adaptive) grad(:) = band_gradient(ib,:,ik,is)
              ! If the band is very flat linear broadening can have problems describing it. In this case, fall back to 
              ! adaptive smearing (and take advantage of FBCS if required).
@@ -1542,7 +1546,7 @@ end if
   end function doslin
 
   !=============================================================================== 
-  subroutine dos_utils_calculate_at_e(energy, matrix_weights, weighted_dos_at_e, dos_at_e)
+  subroutine dos_utils_calculate_at_e(energy, dos_at_e, matrix_weights, weighted_dos_at_e)
     !===============================================================================  
     ! Main routine in dos module, drives the calculation of density of states for
     ! both task : dos and also if it is required elsewhere.
@@ -1861,5 +1865,38 @@ end if
 !       end if
 !    endif
   end subroutine dos_utils_merge_at_e
+
+
+  subroutine report_progress(prefix, iteration, maximum, time_wait, flag)
+    ! Subroutine for reporting progess
+    use od_comms,     only : on_root
+    use od_parameters, only : print_progress
+    implicit none
+    character(len=*) :: prefix
+    integer :: iteration, maximum, time_wait, flag
+    real  :: tarray(2), current
+    real, save :: last_report = -99999.
+    integer, save :: last_flag = -1
+
+    if (on_root .and. print_progress) then
+
+       ! Use the flag to control reset
+       if (flag /= last_flag) then
+          last_report = -99999.
+          last_flag = flag
+       end if
+
+       call etime(tarray, current)
+
+       if (current - last_report > time_wait) then
+          write(*, '(A,I10,A,I10)') prefix, iteration, "/", maximum
+          last_report = current
+       end if
+
+    end if
+
+  end subroutine report_progress
+
+
 
 endmodule od_dos_utils

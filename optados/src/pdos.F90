@@ -52,6 +52,8 @@ module od_pdos
   integer, allocatable :: pdos_am(:,:)              ! angular mtm (num_species,max_am)
   integer, allocatable :: pdos_sites(:)             ! number of each species
   logical :: shortcut
+  logical :: project_all=.false.                           ! Activate by passing
+  logical :: write_raw_weights=.false.                      ! Save the raw data array in HDF5 format
 
 
   !-------------------------------------------------------------------------!
@@ -89,24 +91,71 @@ contains
     ! parse the pdos string to see what we want
     call pdos_get_string
 
-    ! form the right matrix elements
-    call pdos_merge
+    if (project_all) then
+       call compute_weights_all
+       ! Get the fermi energy
+       call dos_utils_set_efermi
+       if (on_root) then
+          call save_hdf5
+       end if
+    else
+       ! form the right matrix elements
+       call pdos_merge
 
-    if(on_root.and.(iprint>2)) then
-       call pdos_report_projectors
-    endif
+       if(on_root.and.(iprint>2)) then
+          call pdos_report_projectors
+       endif
 
-    ! now compute the weighted dos
-    call dos_utils_calculate(matrix_weights, dos_partial)
+       ! now compute the weighted dos
+       call dos_utils_calculate(matrix_weights, dos_partial)
 
-    ! and write everything out
-    if(set_efermi_zero .and. .not.efermi_set) call dos_utils_set_efermi
-    if (on_root) then
-       call pdos_write
-    endif
+       ! and write everything out
+       if(set_efermi_zero .and. .not.efermi_set) call dos_utils_set_efermi
+       if (on_root) then
+          call pdos_write
+       endif
+    end if
 
 
   end subroutine pdos_calculate
+
+  !===============================================================================
+  subroutine compute_weights_all
+    !===============================================================================
+    ! This is a mindbendingly horrific exercise in book-keeping
+    !===============================================================================
+    use od_electronic, only :  pdos_weights
+    use od_cell, only : num_kpoints_on_node
+    use od_comms, only : my_node_id
+    use od_io, only : io_error
+    use od_dos_utils, only : dos_utils_calculate,dos_utils_set_efermi
+    implicit none
+
+    call dos_utils_calculate(pdos_weights, dos_partial)
+
+    return
+  end subroutine compute_weights_all
+
+
+  subroutine save_hdf5
+    ! Subroutine for saving the orbitals in hdf5 format
+    !
+    use h5_save
+    use od_electronic, only :  pdos_orbital
+    use od_electronic, only :  pdos_weights
+
+    write(stdout,'(1x,a78)') 'Saving calculated weights in HDF5 format'
+    call H5_INIT
+    call SAVE_PDOS_ARRAY(dos_partial)
+    call SAVE_ORBITAL_INFO(pdos_symbol)
+
+    if (write_raw_weights) then
+        call SAVE_RAW_WEIGHTS(pdos_weights)
+    end if
+
+    call H5_FINALIZE
+
+  end subroutine save_hdf5
 
 
   !===============================================================================
@@ -131,6 +180,9 @@ contains
           do n_eigen=1,pdos_mwab%nbands    ! Loop over unoccupied states
              do nproj=1,num_proj
                 do orb=1,pdos_mwab%norbitals
+                   ! This does not distinguish multiple orbitals with the same angular momentum channel
+                   ! To project all orbitlas simply let matrix_weights = pdos_weights
+                   ! Each project contains one orbital
                    if(pdos_projection_array(pdos_orbital%species_no(orb),pdos_orbital%rank_in_species(orb) &
                         ,pdos_orbital%am_channel(orb)+1,nproj)==1) then
                       matrix_weights(nproj,n_eigen,N,N_spin)=matrix_weights(nproj,n_eigen,N,N_spin)+&
@@ -226,6 +278,13 @@ contains
           pdos_projection_array(:,:,loop,loop)=1
        end do
        shortcut=.true.
+    elseif(index(ctemp, 'everything') > 0) then
+       project_all=.true.
+       shortcut=.true.
+    elseif(index(ctemp, 'raw_weights') > 0) then
+       project_all=.true.
+       shortcut=.true.
+       write_raw_weights=.true.
     endif
 
 

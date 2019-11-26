@@ -23,6 +23,7 @@
 !=============================================================================== 
 module od_optics
 
+  use h5_save
   use od_constants, only : dp
 
   implicit none
@@ -49,14 +50,14 @@ module od_optics
   real(kind=dp),allocatable, public, dimension(:,:) :: weighted_dos_at_e
   real(kind=dp),allocatable, public, dimension(:,:) :: dos_at_e
 
-  real(kind=dp),allocatable, dimension(:,:,:,:) :: epsilon
-  real(kind=dp),allocatable, dimension(:,:) :: conduct
-  real(kind=dp),allocatable, dimension(:,:) :: refract
-  real(kind=dp),allocatable, dimension(:,:) :: loss_fn
-  real(kind=dp),allocatable, dimension(:) :: absorp
-  real(kind=dp),allocatable, dimension(:) :: reflect
+  real(kind=dp),allocatable, public, dimension(:,:,:,:) :: epsilon
+  real(kind=dp),allocatable, public, dimension(:,:) :: conduct
+  real(kind=dp),allocatable, public, dimension(:,:) :: refract
+  real(kind=dp),allocatable, public, dimension(:,:) :: loss_fn
+  real(kind=dp),allocatable, public, dimension(:) :: absorp
+  real(kind=dp),allocatable, public, dimension(:) :: reflect
 
-  real(kind=dp),allocatable, dimension(:) :: intra
+  real(kind=dp),allocatable, public, dimension(:) :: intra
   real(kind=dp) :: q_weight 
   real(kind=dp) :: N_eff
   real(kind=dp) :: N_eff2
@@ -86,7 +87,7 @@ contains
     use od_jdos_utils, only : jdos_utils_calculate
     use od_comms, only : on_root, my_node_id
     use od_parameters, only : optics_geom, adaptive, linear, fixed, optics_intraband, &
-         optics_drude_broadening
+         optics_drude_broadening, save_hdf5
     use od_dos_utils, only : dos_utils_calculate_at_e,  dos_utils_set_efermi
     use od_io, only : stdout 
 
@@ -102,11 +103,25 @@ contains
     ! Get information from .cst_ome file 
     call elec_read_optical_mat
 
+    write(stdout,'(1x,a78)') '+============================================================================+'
+    if(on_root .and. save_hdf5) then
+       call H5_INIT
+       call SAVE_OPTMAT
+       call SAVE_BAND_ENERGY
+    end if
+
     ! Form matrix element
     call make_weights
-
+    if(on_root .and. save_hdf5) then
+       call SAVE_MATRIX_WEIGHTS(matrix_weights)
+    end if
     ! Send matrix element to jDOS routine and get weighted jDOS back
     call jdos_utils_calculate(matrix_weights, weighted_jdos)
+
+    if(on_root .and. save_hdf5) then
+       call SAVE_WEIGHTED_JDOS(weighted_jdos)
+       call H5_FINALIZE
+    end if
 
     ! Calculate weighted DOS at Ef for intraband term
     if(optics_intraband)then 
@@ -119,7 +134,7 @@ contains
              dos_matrix_weights(N,N2,:,:) = matrix_weights(N2,N2,:,:,N)  
           enddo
        enddo
-       call dos_utils_calculate_at_e(efermi,dos_matrix_weights,weighted_dos_at_e,dos_at_e) 
+       call dos_utils_calculate_at_e(efermi,dos_at_e,dos_matrix_weights,weighted_dos_at_e) 
     endif
 
     call elec_dealloc_optical ! don't need this large array anymore
@@ -127,6 +142,7 @@ contains
     if(on_root) then
        ! Calculate epsilon_2
        call calc_epsilon_2
+
 
        ! Calculate epsilon_1
        call calc_epsilon_1

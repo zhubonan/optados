@@ -25,14 +25,15 @@ else
 endif
 
 EXTENSION:=$(EXTENSION)$(EXE_SUFFIX)
-
+LD_FLAGS = -L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5_fortran -lhdf5hl_fortran -I/usr/include/hdf5/serial
 # Put object names here
-OBJS=algorithms.o cell.o comms.o constants.o core.o dos.o dos_utils.o electronic.o io.o jdos.o jdos_utils.o optics.o parameters.o pdos.o xmgrace_utils.o
+OBJS=algorithms.o cell.o comms.o constants.o core.o dos.o dos_utils.o electronic.o io.o jdos.o jdos_utils.o h5_save.o optics.o parameters.o pdos.o xmgrace_utils.o
 
 all : optados
 
 optados : optados.f90 $(OBJS) ../make.system
-	$(F90) $(FFLAGS) $< $(OBJS) -o optados$(EXTENSION) 
+	$(F90) $(FFLAGS) $< $(OBJS) -o optados$(EXTENSION) $(LD_FLAGS)
+
 
 algorithms.o : algorithms.f90 io.o constants.o ../make.system
 	$(F90) -c $(FFLAGS) $<
@@ -66,6 +67,9 @@ jdos.o : jdos.f90 jdos_utils.o xmgrace_utils.o electronic.o parameters.o io.o ..
 
 jdos_utils.o : jdos_utils.f90 algorithms.o cell.o constants.o comms.o electronic.o io.o parameters.o dos_utils.o ../make.system
 	$(F90) -c $(FFLAGS) $<
+
+h5_save.o: h5_save.f90
+	$(F90) -c $(FFLAGS)  -L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5_fortran -lhdf5hl_fortran -I/usr/include/hdf5/serial $<
 
 optics.o : optics.f90 constants.o io.o electronic.o jdos_utils.o cell.o parameters.o xmgrace_utils.o ../make.system
 	$(F90) -c $(FFLAGS) $<
